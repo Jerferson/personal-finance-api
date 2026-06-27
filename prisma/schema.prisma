@@ -1,0 +1,236 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CASH
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  INCOME
+  EXPENSE
+  EQUITY
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionStatus {
+  POSTED
+  VOIDED
+}
+
+enum ScheduledBillStatus {
+  SCHEDULED
+  POSTED
+  CANCELLED
+}
+
+enum JournalEntryStatus {
+  POSTED
+  VOIDED
+}
+
+enum JournalEntrySourceType {
+  MANUAL
+  SIMPLE_TRANSACTION
+  SCHEDULED_BILL
+  TRANSFER
+  SEED
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model LedgerAccount {
+  id        String            @id @default(uuid())
+  code      String            @unique
+  name      String
+  type      LedgerAccountType
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  accounts     Account[]
+  journalLines JournalLine[]
+
+  @@map("ledger_accounts")
+}
+
+model Account {
+  id              String      @id @default(uuid())
+  name            String
+  type            AccountType
+  currency        String      @default("USD")
+  initialBalance  Decimal     @default(0) @db.Decimal(19, 4) @map("initial_balance")
+  ledgerAccountId String      @map("ledger_account_id")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  ledgerAccount  LedgerAccount   @relation(fields: [ledgerAccountId], references: [id])
+  transactions   Transaction[]
+  scheduledBills ScheduledBill[]
+
+  @@map("accounts")
+}
+
+model Category {
+  id        String       @id @default(uuid())
+  name      String
+  type      CategoryType
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  transactions   Transaction[]
+  scheduledBills ScheduledBill[]
+  journalLines   JournalLine[]
+
+  @@map("categories")
+}
+
+model Project {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  transactions   Transaction[]
+  scheduledBills ScheduledBill[]
+  journalLines   JournalLine[]
+
+  @@map("projects")
+}
+
+model Transaction {
+  id              String            @id @default(uuid())
+  accountId       String            @map("account_id")
+  categoryId      String            @map("category_id")
+  projectId       String?           @map("project_id")
+  journalEntryId  String            @unique @map("journal_entry_id")
+  type            TransactionType
+  status          TransactionStatus @default(POSTED)
+  amount          Decimal           @db.Decimal(19, 4)
+  description     String
+  transactionDate DateTime          @map("transaction_date") @db.Date
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  account       Account        @relation(fields: [accountId], references: [id])
+  category      Category       @relation(fields: [categoryId], references: [id])
+  project       Project?       @relation(fields: [projectId], references: [id])
+  journalEntry  JournalEntry   @relation(fields: [journalEntryId], references: [id])
+  scheduledBill ScheduledBill?
+
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([projectId])
+  @@index([transactionDate])
+  @@index([status])
+  @@index([type])
+  @@index([accountId, transactionDate])
+  @@index([status, transactionDate])
+  @@map("transactions")
+}
+
+model JournalEntry {
+  id             String                 @id @default(uuid())
+  entryDate      DateTime               @map("entry_date") @db.Date
+  description    String
+  sourceType     JournalEntrySourceType @map("source_type")
+  sourceId       String?                @map("source_id")
+  idempotencyKey String?                @map("idempotency_key")
+  status         JournalEntryStatus     @default(POSTED)
+  createdAt      DateTime               @default(now()) @map("created_at")
+  updatedAt      DateTime               @updatedAt @map("updated_at")
+
+  lines       JournalLine[]
+  transaction Transaction?
+
+  @@index([status])
+  @@index([sourceType])
+  @@index([entryDate])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id              String   @id @default(uuid())
+  journalEntryId  String   @map("journal_entry_id")
+  ledgerAccountId String   @map("ledger_account_id")
+  debit           Decimal  @default(0) @db.Decimal(19, 4)
+  credit          Decimal  @default(0) @db.Decimal(19, 4)
+  categoryId      String?  @map("category_id")
+  projectId       String?  @map("project_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  journalEntry  JournalEntry  @relation(fields: [journalEntryId], references: [id])
+  ledgerAccount LedgerAccount @relation(fields: [ledgerAccountId], references: [id])
+  category      Category?     @relation(fields: [categoryId], references: [id])
+  project       Project?      @relation(fields: [projectId], references: [id])
+
+  @@index([journalEntryId])
+  @@index([ledgerAccountId])
+  @@index([categoryId])
+  @@index([projectId])
+  @@map("journal_lines")
+}
+
+model ScheduledBill {
+  id            String              @id @default(uuid())
+  accountId     String              @map("account_id")
+  categoryId    String              @map("category_id")
+  projectId     String?             @map("project_id")
+  transactionId String?             @unique @map("transaction_id")
+  type          TransactionType
+  amount        Decimal             @db.Decimal(19, 4)
+  description   String
+  dueDate       DateTime            @map("due_date") @db.Date
+  status        ScheduledBillStatus @default(SCHEDULED)
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  account     Account      @relation(fields: [accountId], references: [id])
+  category    Category     @relation(fields: [categoryId], references: [id])
+  project     Project?     @relation(fields: [projectId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([accountId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("scheduled_bills")
+}
+
+model IdempotencyKey {
+  id           String   @id @default(uuid())
+  key          String
+  endpoint     String
+  requestHash  String   @map("request_hash")
+  responseBody Json     @map("response_body")
+  statusCode   Int      @map("status_code")
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiresAt    DateTime @map("expires_at")
+
+  @@unique([key, endpoint])
+  @@map("idempotency_keys")
+}
