@@ -36,7 +36,6 @@ enum TransactionType {
 
 enum TransactionStatus {
   POSTED
-  VOIDED
 }
 
 enum ScheduledBillStatus {
@@ -47,7 +46,6 @@ enum ScheduledBillStatus {
 
 enum JournalEntryStatus {
   POSTED
-  VOIDED
 }
 
 enum JournalEntrySourceType {

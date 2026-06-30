@@ -1,8 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { JournalEntryStatus, Prisma } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { JournalEntryService } from '../ledger/journal-entry.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { JournalEntryNotFoundException } from '../../common/errors/domain.errors';
 import { paginate, PaginatedResponse } from '../../common/dto/pagination.dto';
 import { endOfDay, parseDate, startOfDay } from '../../common/utils/dates';
@@ -16,11 +14,7 @@ type JournalEntryWithLines = Prisma.JournalEntryGetPayload<{
 
 @Injectable()
 export class JournalEntriesService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly journalEntryService: JournalEntryService,
-    private readonly idempotencyService: IdempotencyService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private readonly journalEntryInclude = {
     lines: { include: { ledgerAccount: true } },
@@ -68,45 +62,4 @@ export class JournalEntriesService {
     return entry;
   }
 
-  async void(
-    id: string,
-    idempotencyKey: string,
-    endpoint: string,
-  ): Promise<JournalEntryWithLines> {
-    const result = await this.idempotencyService.run<JournalEntryWithLines>(
-      {
-        key: idempotencyKey,
-        endpoint,
-        body: { id },
-        resourceType: 'journal-entry',
-      },
-      async () => {
-        const entry = await this.findOne(id);
-
-        // Check if the entry has a linked transaction
-        const linkedTransaction = await this.prisma.transaction.findUnique({
-          where: { journalEntryId: id },
-        });
-
-        if (linkedTransaction) {
-          throw new BadRequestException(
-            'Use POST /transactions/:id/void to void this entry',
-          );
-        }
-
-        // Idempotent: already voided
-        if (entry.status === JournalEntryStatus.VOIDED) {
-          return { data: entry, statusCode: 200, resourceId: entry.id };
-        }
-
-        const voided = await this.journalEntryService.voidEntry(id);
-
-        const updated = await this.findOne(id);
-
-        return { data: updated, statusCode: 200, resourceId: entry.id };
-      },
-    );
-
-    return result.data;
-  }
 }

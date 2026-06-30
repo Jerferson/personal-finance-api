@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -14,6 +15,7 @@ import {
 import {
   ApiCreatedResponse,
   ApiHeaders,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -63,15 +65,11 @@ export class TransactionsController {
     return this.transactionsService.update(id, dto);
   }
 
-  @Post(':id/void')
-  @UseGuards(IdempotencyGuard)
-  @Idempotent('transaction')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Void a transaction' })
-  @ApiHeaders([{ name: 'Idempotency-Key', required: true }])
-  @ApiOkResponse({ description: 'Transaction voided' })
-  void(@Param('id') id: string, @Req() req: Request) {
-    const idempotencyKey = req.headers['idempotency-key'] as string;
-    return this.transactionsService.void(id, idempotencyKey, req.path);
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a transaction' })
+  @ApiNoContentResponse({ description: 'Transaction deleted' })
+  delete(@Param('id') id: string) {
+    return this.transactionsService.delete(id);
   }
 }

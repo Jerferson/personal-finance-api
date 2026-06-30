@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { JournalEntrySourceType, TransactionStatus, TransactionType, Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,7 +12,6 @@ import {
   InvalidAmountError,
   ProjectNotFoundException,
   TransactionNotFoundException,
-  TransactionNotEditableError,
 } from '../../common/errors/domain.errors';
 import { paginate, PaginatedResponse } from '../../common/dto/pagination.dto';
 import { parseDate, endOfDay, startOfDay } from '../../common/utils/dates';
@@ -224,10 +223,6 @@ export class TransactionsService {
   async update(id: string, dto: UpdateTransactionDto): Promise<TransactionWithRelations> {
     const transaction = await this.findOne(id);
 
-    if (transaction.status === TransactionStatus.VOIDED) {
-      throw new TransactionNotEditableError();
-    }
-
     if (dto.projectId) {
       await this.validateProject(dto.projectId);
     }
@@ -242,40 +237,14 @@ export class TransactionsService {
     });
   }
 
-  async void(
-    id: string,
-    idempotencyKey: string,
-    endpoint: string,
-  ): Promise<TransactionWithRelations> {
-    const result = await this.idempotencyService.run<TransactionWithRelations>(
-      {
-        key: idempotencyKey,
-        endpoint,
-        body: { id },
-        resourceType: 'transaction',
-      },
-      async () => {
-        const transaction = await this.findOne(id);
+  async delete(id: string): Promise<void> {
+    const transaction = await this.findOne(id);
+    const journalEntryId = transaction.journalEntryId;
 
-        // Idempotent: already voided
-        if (transaction.status === TransactionStatus.VOIDED) {
-          return { data: transaction, statusCode: 200, resourceId: transaction.id };
-        }
-
-        const voided = await this.prisma.$transaction(async (tx) => {
-          await this.journalEntryService.voidEntry(transaction.journalEntryId, tx);
-
-          return tx.transaction.update({
-            where: { id },
-            data: { status: TransactionStatus.VOIDED },
-            include: this.transactionInclude,
-          });
-        });
-
-        return { data: voided, statusCode: 200, resourceId: voided.id };
-      },
-    );
-
-    return result.data;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.transaction.delete({ where: { id } });
+      await tx.journalLine.deleteMany({ where: { journalEntryId } });
+      await tx.journalEntry.delete({ where: { id: journalEntryId } });
+    });
   }
 }

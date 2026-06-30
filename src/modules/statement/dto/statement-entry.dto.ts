@@ -1,6 +1,6 @@
 export type StatementEntryType = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 export type StatementSourceType = 'TRANSACTION' | 'SCHEDULED_BILL' | 'TRANSFER';
-export type StatementStatus = 'POSTED' | 'VOIDED' | 'SCHEDULED';
+export type StatementStatus = 'POSTED' | 'SCHEDULED';
 
 export class StatementEntryDto {
   id: string;

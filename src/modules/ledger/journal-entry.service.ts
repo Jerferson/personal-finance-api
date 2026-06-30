@@ -87,21 +87,4 @@ export class JournalEntryService {
     return entry;
   }
 
-  async voidEntry(entryId: string, tx?: Prisma.TransactionClient) {
-    const client = tx ?? this.prisma;
-
-    const entry = await client.journalEntry.findUnique({ where: { id: entryId } });
-    if (!entry) return null;
-
-    // Idempotent: already voided, return as-is
-    if (entry.status === JournalEntryStatus.VOIDED) {
-      return client.journalEntry.findUnique({ where: { id: entryId }, include: { lines: true } });
-    }
-
-    return client.journalEntry.update({
-      where: { id: entryId },
-      data: { status: JournalEntryStatus.VOIDED },
-      include: { lines: true },
-    });
-  }
 }

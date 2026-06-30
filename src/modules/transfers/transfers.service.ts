@@ -10,7 +10,8 @@ import {
   InvalidAmountError,
   TransferSameAccountError,
 } from '../../common/errors/domain.errors';
-import { parseDate } from '../../common/utils/dates';
+import { formatDateIso, parseDate } from '../../common/utils/dates';
+import { paginate, PaginatedResponse } from '../../common/dto/pagination.dto';
 import { CreateTransferDto } from './dto/create-transfer.dto';
 
 export interface TransferResponse {
@@ -23,6 +24,18 @@ export interface TransferResponse {
   createdAt: Date;
 }
 
+export interface TransferListItem {
+  id: string;
+  date: string;
+  description: string;
+  amount: string;
+  fromAccountId: string;
+  fromAccountName: string;
+  toAccountId: string;
+  toAccountName: string;
+  createdAt: string;
+}
+
 @Injectable()
 export class TransfersService {
   constructor(
@@ -31,6 +44,46 @@ export class TransfersService {
     private readonly ledgerAccountService: LedgerAccountService,
     private readonly idempotencyService: IdempotencyService,
   ) {}
+
+  private readonly listInclude = {
+    lines: { include: { ledgerAccount: { include: { accounts: true } } } },
+  };
+
+  async findAll(page: number, limit: number): Promise<PaginatedResponse<TransferListItem>> {
+    const skip = (page - 1) * limit;
+    const where = { sourceType: JournalEntrySourceType.TRANSFER };
+
+    const [raw, total] = await this.prisma.$transaction([
+      this.prisma.journalEntry.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
+        include: this.listInclude,
+      }),
+      this.prisma.journalEntry.count({ where }),
+    ]);
+
+    const data = raw.map(je => {
+      const debitLine  = je.lines.find(l => new Decimal(l.debit.toString()).greaterThan(0));
+      const creditLine = je.lines.find(l => new Decimal(l.credit.toString()).greaterThan(0));
+      const toAccount   = debitLine?.ledgerAccount.accounts[0];
+      const fromAccount = creditLine?.ledgerAccount.accounts[0];
+      return {
+        id: je.id,
+        date: formatDateIso(je.entryDate),
+        description: je.description,
+        amount: debitLine?.debit.toString() ?? '0',
+        fromAccountId:   fromAccount?.id   ?? '',
+        fromAccountName: fromAccount?.name ?? 'Unknown',
+        toAccountId:   toAccount?.id   ?? '',
+        toAccountName: toAccount?.name ?? 'Unknown',
+        createdAt: je.createdAt.toISOString(),
+      };
+    });
+
+    return paginate(data, total, page, limit);
+  }
 
   private async validateAccount(accountId: string): Promise<void> {
     const account = await this.prisma.account.findUnique({ where: { id: accountId } });
