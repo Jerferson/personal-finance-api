@@ -12,6 +12,7 @@ import { JournalEntriesModule } from './modules/journal-entries/journal-entries.
 import { LedgerAccountsModule } from './modules/ledger-accounts/ledger-accounts.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ProjectionsModule } from './modules/projections/projections.module';
+import { StatementModule } from './modules/statement/statement.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ProjectionsModule } from './modules/projections/projections.module';
     LedgerAccountsModule,
     ReportsModule,
     ProjectionsModule,
+    StatementModule,
   ],
 })
 export class AppModule {}
