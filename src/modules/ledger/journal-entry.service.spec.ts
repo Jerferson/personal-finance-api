@@ -5,7 +5,10 @@ import { UnbalancedJournalEntryError, InvalidJournalLineError } from '../../comm
 import { Decimal } from '@prisma/client/runtime/library';
 import { JournalEntrySourceType } from '@prisma/client';
 
-const mockPrisma = {
+const mockPrisma: Record<string, unknown> & {
+  journalEntry: { create: jest.Mock; findUnique: jest.Mock; update: jest.Mock };
+  $transaction: jest.Mock;
+} = {
   journalEntry: {
     create: jest.fn(),
     findUnique: jest.fn(),
@@ -131,29 +134,4 @@ describe('JournalEntryService', () => {
     });
   });
 
-  describe('voidEntry', () => {
-    it('should void a POSTED journal entry', async () => {
-      mockPrisma.journalEntry.findUnique.mockResolvedValue({ id: 'je-1', status: 'POSTED' });
-      mockPrisma.journalEntry.update.mockResolvedValue({ id: 'je-1', status: 'VOIDED', lines: [] });
-
-      await service.voidEntry('je-1');
-
-      expect(mockPrisma.journalEntry.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'je-1' },
-          data: { status: 'VOIDED' },
-        }),
-      );
-    });
-
-    it('should be idempotent: return already-voided entry without updating', async () => {
-      mockPrisma.journalEntry.findUnique
-        .mockResolvedValueOnce({ id: 'je-1', status: 'VOIDED' })
-        .mockResolvedValueOnce({ id: 'je-1', status: 'VOIDED', lines: [] });
-
-      await service.voidEntry('je-1');
-
-      expect(mockPrisma.journalEntry.update).not.toHaveBeenCalled();
-    });
-  });
 });

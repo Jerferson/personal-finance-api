@@ -4,7 +4,6 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JournalEntryService } from '../ledger/journal-entry.service';
 import { LedgerAccountService } from '../ledger/ledger-account.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import {
   AccountNotFoundException,
   InvalidAmountError,
@@ -42,12 +41,16 @@ export class TransfersService {
     private readonly prisma: PrismaService,
     private readonly journalEntryService: JournalEntryService,
     private readonly ledgerAccountService: LedgerAccountService,
-    private readonly idempotencyService: IdempotencyService,
   ) {}
 
   private readonly listInclude = {
     lines: { include: { ledgerAccount: { include: { accounts: true } } } },
   };
+
+  private async validateAccount(accountId: string): Promise<void> {
+    const account = await this.prisma.account.findUnique({ where: { id: accountId } });
+    if (!account) throw new AccountNotFoundException(accountId);
+  }
 
   async findAll(page: number, limit: number): Promise<PaginatedResponse<TransferListItem>> {
     const skip = (page - 1) * limit;
@@ -55,9 +58,7 @@ export class TransfersService {
 
     const [raw, total] = await this.prisma.$transaction([
       this.prisma.journalEntry.findMany({
-        where,
-        skip,
-        take: limit,
+        where, skip, take: limit,
         orderBy: [{ entryDate: 'desc' }, { createdAt: 'desc' }],
         include: this.listInclude,
       }),
@@ -85,78 +86,59 @@ export class TransfersService {
     return paginate(data, total, page, limit);
   }
 
-  private async validateAccount(accountId: string): Promise<void> {
-    const account = await this.prisma.account.findUnique({ where: { id: accountId } });
-    if (!account) {
-      throw new AccountNotFoundException(accountId);
+  async create(dto: CreateTransferDto, idempotencyKey: string): Promise<TransferResponse> {
+    // Return existing if already processed
+    const existingJe = await this.prisma.journalEntry.findUnique({ where: { idempotencyKey } });
+    if (existingJe) {
+      const debitLine = await this.prisma.journalLine.findFirst({
+        where: { journalEntryId: existingJe.id, debit: { gt: 0 } },
+        include: { ledgerAccount: { include: { accounts: true } } },
+      });
+      return {
+        journalEntryId: existingJe.id,
+        fromAccountId: dto.fromAccountId,
+        toAccountId: dto.toAccountId,
+        amount: new Decimal(debitLine?.debit.toString() ?? dto.amount),
+        transferDate: existingJe.entryDate,
+        description: existingJe.description,
+        createdAt: existingJe.createdAt,
+      };
     }
-  }
 
-  async create(
-    dto: CreateTransferDto,
-    idempotencyKey: string,
-    endpoint: string,
-  ): Promise<TransferResponse> {
-    const result = await this.idempotencyService.run<TransferResponse>(
-      {
-        key: idempotencyKey,
-        endpoint,
-        body: dto,
-        resourceType: 'transfer',
-      },
-      async () => {
-        if (dto.fromAccountId === dto.toAccountId) {
-          throw new TransferSameAccountError();
-        }
+    if (dto.fromAccountId === dto.toAccountId) throw new TransferSameAccountError();
 
-        const amount = new Decimal(dto.amount);
-        if (!amount.greaterThan(0)) {
-          throw new InvalidAmountError();
-        }
+    const amount = new Decimal(dto.amount);
+    if (!amount.greaterThan(0)) throw new InvalidAmountError();
 
-        await this.validateAccount(dto.fromAccountId);
-        await this.validateAccount(dto.toAccountId);
+    await this.validateAccount(dto.fromAccountId);
+    await this.validateAccount(dto.toAccountId);
 
-        const transferDate = parseDate(dto.transferDate);
+    const transferDate = parseDate(dto.transferDate);
 
-        const [fromLedger, toLedger] = await Promise.all([
-          this.ledgerAccountService.getAccountLedgerAccount(dto.fromAccountId),
-          this.ledgerAccountService.getAccountLedgerAccount(dto.toAccountId),
-        ]);
+    const [fromLedger, toLedger] = await Promise.all([
+      this.ledgerAccountService.getAccountLedgerAccount(dto.fromAccountId),
+      this.ledgerAccountService.getAccountLedgerAccount(dto.toAccountId),
+    ]);
 
-        const journalEntry = await this.journalEntryService.createBalanced({
-          entryDate: transferDate,
-          description: dto.description,
-          sourceType: JournalEntrySourceType.TRANSFER,
-          idempotencyKey,
-          lines: [
-            {
-              ledgerAccountId: toLedger.id,
-              debit: amount,
-              credit: new Decimal(0),
-            },
-            {
-              ledgerAccountId: fromLedger.id,
-              debit: new Decimal(0),
-              credit: amount,
-            },
-          ],
-        });
+    const journalEntry = await this.journalEntryService.createBalanced({
+      entryDate: transferDate,
+      description: dto.description,
+      sourceType: JournalEntrySourceType.TRANSFER,
+      idempotencyKey,
+      lines: [
+        { ledgerAccountId: toLedger.id,   debit: amount,           credit: new Decimal(0) },
+        { ledgerAccountId: fromLedger.id, debit: new Decimal(0),   credit: amount },
+      ],
+    });
 
-        const response: TransferResponse = {
-          journalEntryId: journalEntry.id,
-          fromAccountId: dto.fromAccountId,
-          toAccountId: dto.toAccountId,
-          amount,
-          transferDate,
-          description: dto.description,
-          createdAt: journalEntry.createdAt,
-        };
-
-        return { data: response, statusCode: 201, resourceId: journalEntry.id };
-      },
-    );
-
-    return result.data;
+    return {
+      journalEntryId: journalEntry.id,
+      fromAccountId: dto.fromAccountId,
+      toAccountId: dto.toAccountId,
+      amount,
+      transferDate,
+      description: dto.description,
+      createdAt: journalEntry.createdAt,
+    };
   }
 }

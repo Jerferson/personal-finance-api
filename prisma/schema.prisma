@@ -157,7 +157,7 @@ model JournalEntry {
   description    String
   sourceType     JournalEntrySourceType @map("source_type")
   sourceId       String?                @map("source_id")
-  idempotencyKey String?                @map("idempotency_key")
+  idempotencyKey String?                @unique @map("idempotency_key")
   status         JournalEntryStatus     @default(POSTED)
   createdAt      DateTime               @default(now()) @map("created_at")
   updatedAt      DateTime               @updatedAt @map("updated_at")
@@ -203,6 +203,7 @@ model ScheduledBill {
   amount        Decimal             @db.Decimal(19, 4)
   description   String
   dueDate       DateTime            @map("due_date") @db.Date
+  idempotencyKey String?             @unique @map("idempotency_key")
   status        ScheduledBillStatus @default(SCHEDULED)
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
@@ -221,19 +222,3 @@ model ScheduledBill {
   @@map("scheduled_bills")
 }
 
-model IdempotencyKey {
-  id           String   @id @default(uuid())
-  key          String
-  endpoint     String
-  requestHash  String   @map("request_hash")
-  responseBody Json     @map("response_body")
-  statusCode   Int      @map("status_code")
-  resourceType String   @map("resource_type")
-  resourceId   String?  @map("resource_id")
-  createdAt    DateTime @default(now()) @map("created_at")
-  expiresAt    DateTime @map("expires_at")
-
-  @@unique([key, endpoint])
-  @@index([expiresAt])
-  @@map("idempotency_keys")
-}

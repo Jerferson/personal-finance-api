@@ -9,7 +9,6 @@ import {
   Post,
   Query,
   Req,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -23,8 +22,6 @@ import { ScheduledBillsService } from './scheduled-bills.service';
 import { CreateScheduledBillDto } from './dto/create-scheduled-bill.dto';
 import { UpdateScheduledBillDto } from './dto/update-scheduled-bill.dto';
 import { QueryScheduledBillDto } from './dto/query-scheduled-bill.dto';
-import { IdempotencyGuard } from '../../common/idempotency/idempotency.guard';
-import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 
 @ApiTags('scheduled-bills')
 @Controller('scheduled-bills')
@@ -32,14 +29,12 @@ export class ScheduledBillsController {
   constructor(private readonly scheduledBillsService: ScheduledBillsService) {}
 
   @Post()
-  @UseGuards(IdempotencyGuard)
-  @Idempotent('scheduled-bill')
   @ApiOperation({ summary: 'Create a new scheduled bill' })
   @ApiHeaders([{ name: 'Idempotency-Key', required: true }])
   @ApiCreatedResponse({ description: 'Scheduled bill created successfully' })
   create(@Body() dto: CreateScheduledBillDto, @Req() req: Request) {
     const idempotencyKey = req.headers['idempotency-key'] as string;
-    return this.scheduledBillsService.create(dto, idempotencyKey, req.path);
+    return this.scheduledBillsService.create(dto, idempotencyKey);
   }
 
   @Get()
@@ -64,26 +59,18 @@ export class ScheduledBillsController {
   }
 
   @Post(':id/post')
-  @UseGuards(IdempotencyGuard)
-  @Idempotent('scheduled-bill')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Post a scheduled bill (creates a transaction)' })
-  @ApiHeaders([{ name: 'Idempotency-Key', required: true }])
   @ApiOkResponse({ description: 'Scheduled bill posted' })
-  post(@Param('id') id: string, @Req() req: Request) {
-    const idempotencyKey = req.headers['idempotency-key'] as string;
-    return this.scheduledBillsService.post(id, idempotencyKey, req.path);
+  post(@Param('id') id: string) {
+    return this.scheduledBillsService.post(id);
   }
 
   @Post(':id/cancel')
-  @UseGuards(IdempotencyGuard)
-  @Idempotent('scheduled-bill')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancel a scheduled bill' })
-  @ApiHeaders([{ name: 'Idempotency-Key', required: true }])
   @ApiOkResponse({ description: 'Scheduled bill cancelled' })
-  cancel(@Param('id') id: string, @Req() req: Request) {
-    const idempotencyKey = req.headers['idempotency-key'] as string;
-    return this.scheduledBillsService.cancel(id, idempotencyKey, req.path);
+  cancel(@Param('id') id: string) {
+    return this.scheduledBillsService.cancel(id);
   }
 }

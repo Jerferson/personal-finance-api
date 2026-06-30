@@ -10,7 +10,6 @@ import {
   Post,
   Query,
   Req,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -25,8 +24,6 @@ import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { QueryTransactionDto } from './dto/query-transaction.dto';
-import { IdempotencyGuard } from '../../common/idempotency/idempotency.guard';
-import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 
 @ApiTags('transactions')
 @Controller('transactions')
@@ -34,14 +31,12 @@ export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
   @Post()
-  @UseGuards(IdempotencyGuard)
-  @Idempotent('transaction')
   @ApiOperation({ summary: 'Create a new transaction' })
   @ApiHeaders([{ name: 'Idempotency-Key', required: true }])
   @ApiCreatedResponse({ description: 'Transaction created successfully' })
   create(@Body() dto: CreateTransactionDto, @Req() req: Request) {
     const idempotencyKey = req.headers['idempotency-key'] as string;
-    return this.transactionsService.create(dto, idempotencyKey, req.path);
+    return this.transactionsService.create(dto, idempotencyKey);
   }
 
   @Get()
@@ -59,7 +54,7 @@ export class TransactionsController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update a transaction (description and projectId only)' })
+  @ApiOperation({ summary: 'Update a transaction' })
   @ApiOkResponse({ description: 'Transaction updated' })
   update(@Param('id') id: string, @Body() dto: UpdateTransactionDto) {
     return this.transactionsService.update(id, dto);

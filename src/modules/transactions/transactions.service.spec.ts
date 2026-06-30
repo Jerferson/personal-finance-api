@@ -56,7 +56,7 @@ describe('Transaction business rules', () => {
 
   describe('Ledger line derivation for EXPENSE', () => {
     it('should produce Debit=Expenses, Credit=Account for EXPENSE type', () => {
-      const type = 'EXPENSE';
+      const type: string = 'EXPENSE';
       const expensesLedgerId = 'la-expenses';
       const accountLedgerId = 'la-checking';
 

@@ -113,12 +113,6 @@ export class InvalidDateFormatError extends BadRequestException {
   }
 }
 
-export class IdempotencyConflictError extends ConflictException {
-  constructor() {
-    super('Idempotency-Key already used with a different request body');
-  }
-}
-
 export class LedgerAccountNotFoundException extends NotFoundException {
   constructor(id: string) {
     super(`Ledger account with id '${id}' not found`);

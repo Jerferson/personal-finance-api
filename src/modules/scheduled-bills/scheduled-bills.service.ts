@@ -10,7 +10,6 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JournalEntryService } from '../ledger/journal-entry.service';
 import { LedgerAccountService } from '../ledger/ledger-account.service';
-import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import {
   AccountNotFoundException,
   CategoryNotFoundException,
@@ -28,12 +27,7 @@ import { UpdateScheduledBillDto } from './dto/update-scheduled-bill.dto';
 import { QueryScheduledBillDto } from './dto/query-scheduled-bill.dto';
 
 type ScheduledBillWithRelations = Prisma.ScheduledBillGetPayload<{
-  include: {
-    account: true;
-    category: true;
-    project: true;
-    transaction: true;
-  };
+  include: { account: true; category: true; project: true; transaction: true };
 }>;
 
 @Injectable()
@@ -42,90 +36,61 @@ export class ScheduledBillsService {
     private readonly prisma: PrismaService,
     private readonly journalEntryService: JournalEntryService,
     private readonly ledgerAccountService: LedgerAccountService,
-    private readonly idempotencyService: IdempotencyService,
   ) {}
 
   private readonly scheduledBillInclude = {
-    account: true,
-    category: true,
-    project: true,
-    transaction: true,
+    account: true, category: true, project: true, transaction: true,
   } satisfies Prisma.ScheduledBillInclude;
 
   private async validateAmount(amount: string): Promise<Decimal> {
     const decimal = new Decimal(amount);
-    if (!decimal.greaterThan(0)) {
-      throw new InvalidAmountError();
-    }
+    if (!decimal.greaterThan(0)) throw new InvalidAmountError();
     return decimal;
   }
 
   private async validateAccount(accountId: string): Promise<void> {
     const account = await this.prisma.account.findUnique({ where: { id: accountId } });
-    if (!account) {
-      throw new AccountNotFoundException(accountId);
-    }
+    if (!account) throw new AccountNotFoundException(accountId);
   }
 
   private async validateCategory(categoryId: string, type: TransactionType): Promise<void> {
     const category = await this.prisma.category.findUnique({ where: { id: categoryId } });
-    if (!category) {
-      throw new CategoryNotFoundException(categoryId);
-    }
-    if (category.type !== type) {
-      throw new CategoryTypeMismatchError();
-    }
+    if (!category) throw new CategoryNotFoundException(categoryId);
+    if (category.type !== type) throw new CategoryTypeMismatchError();
   }
 
   private async validateProject(projectId: string): Promise<void> {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
-    if (!project) {
-      throw new ProjectNotFoundException(projectId);
-    }
+    if (!project) throw new ProjectNotFoundException(projectId);
   }
 
-  async create(
-    dto: CreateScheduledBillDto,
-    idempotencyKey: string,
-    endpoint: string,
-  ): Promise<ScheduledBillWithRelations> {
-    const result = await this.idempotencyService.run<ScheduledBillWithRelations>(
-      {
-        key: idempotencyKey,
-        endpoint,
-        body: dto,
-        resourceType: 'scheduled-bill',
+  async create(dto: CreateScheduledBillDto, idempotencyKey: string): Promise<ScheduledBillWithRelations> {
+    // Return existing if already processed
+    const existing = await this.prisma.scheduledBill.findUnique({
+      where: { idempotencyKey },
+      include: this.scheduledBillInclude,
+    });
+    if (existing) return existing;
+
+    await this.validateAmount(dto.amount);
+    await this.validateAccount(dto.accountId);
+    await this.validateCategory(dto.categoryId, dto.type);
+    if (dto.projectId) await this.validateProject(dto.projectId);
+
+    return this.prisma.scheduledBill.create({
+      data: {
+        accountId: dto.accountId,
+        categoryId: dto.categoryId,
+        type: dto.type,
+        amount: new Decimal(dto.amount),
+        description: dto.description,
+        dueDate: parseDate(dto.dueDate),
+        status: ScheduledBillStatus.SCHEDULED,
+        projectId: dto.projectId ?? null,
+        idempotencyKey,
       },
-      async () => {
-        await this.validateAmount(dto.amount);
-        await this.validateAccount(dto.accountId);
-        await this.validateCategory(dto.categoryId, dto.type);
-        if (dto.projectId) {
-          await this.validateProject(dto.projectId);
-        }
-
-        const dueDate = parseDate(dto.dueDate);
-        const amount = new Decimal(dto.amount);
-
-        const bill = await this.prisma.scheduledBill.create({
-          data: {
-            accountId: dto.accountId,
-            categoryId: dto.categoryId,
-            type: dto.type,
-            amount,
-            description: dto.description,
-            dueDate,
-            status: ScheduledBillStatus.SCHEDULED,
-            projectId: dto.projectId ?? null,
-          },
-          include: this.scheduledBillInclude,
-        });
-
-        return { data: bill, statusCode: 201, resourceId: bill.id };
-      },
-    );
-
-    return result.data;
+      include: this.scheduledBillInclude,
+    });
   }
 
   async findAll(query: QueryScheduledBillDto): Promise<PaginatedResponse<ScheduledBillWithRelations>> {
@@ -147,13 +112,7 @@ export class ScheduledBillsService {
     };
 
     const [data, total] = await this.prisma.$transaction([
-      this.prisma.scheduledBill.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
-        include: this.scheduledBillInclude,
-      }),
+      this.prisma.scheduledBill.findMany({ where, skip, take: limit, orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }], include: this.scheduledBillInclude }),
       this.prisma.scheduledBill.count({ where }),
     ]);
 
@@ -161,44 +120,21 @@ export class ScheduledBillsService {
   }
 
   async findOne(id: string): Promise<ScheduledBillWithRelations> {
-    const bill = await this.prisma.scheduledBill.findUnique({
-      where: { id },
-      include: this.scheduledBillInclude,
-    });
-
-    if (!bill) {
-      throw new ScheduledBillNotFoundException(id);
-    }
-
+    const bill = await this.prisma.scheduledBill.findUnique({ where: { id }, include: this.scheduledBillInclude });
+    if (!bill) throw new ScheduledBillNotFoundException(id);
     return bill;
   }
 
   async update(id: string, dto: UpdateScheduledBillDto): Promise<ScheduledBillWithRelations> {
     const bill = await this.findOne(id);
+    if (bill.status !== ScheduledBillStatus.SCHEDULED) throw new ScheduledBillNotScheduledError('update');
 
-    if (bill.status !== ScheduledBillStatus.SCHEDULED) {
-      throw new ScheduledBillNotScheduledError('update');
-    }
-
-    // Re-validate category type if type or categoryId is being changed
     const effectiveType = dto.type ?? bill.type;
     const effectiveCategoryId = dto.categoryId ?? bill.categoryId;
-
-    if (dto.type !== undefined || dto.categoryId !== undefined) {
-      await this.validateCategory(effectiveCategoryId, effectiveType);
-    }
-
-    if (dto.accountId !== undefined) {
-      await this.validateAccount(dto.accountId);
-    }
-
-    if (dto.projectId !== undefined) {
-      await this.validateProject(dto.projectId);
-    }
-
-    if (dto.amount !== undefined) {
-      await this.validateAmount(dto.amount);
-    }
+    if (dto.type !== undefined || dto.categoryId !== undefined) await this.validateCategory(effectiveCategoryId, effectiveType);
+    if (dto.accountId !== undefined) await this.validateAccount(dto.accountId);
+    if (dto.projectId !== undefined) await this.validateProject(dto.projectId);
+    if (dto.amount !== undefined) await this.validateAmount(dto.amount);
 
     return this.prisma.scheduledBill.update({
       where: { id },
@@ -215,153 +151,77 @@ export class ScheduledBillsService {
     });
   }
 
-  async post(
-    id: string,
-    idempotencyKey: string,
-    endpoint: string,
-  ): Promise<ScheduledBillWithRelations> {
-    const result = await this.idempotencyService.run<ScheduledBillWithRelations>(
-      {
-        key: idempotencyKey,
-        endpoint,
-        body: { id },
-        resourceType: 'scheduled-bill',
-      },
-      async () => {
-        const bill = await this.findOne(id);
+  async post(id: string): Promise<ScheduledBillWithRelations> {
+    const bill = await this.findOne(id);
 
-        // Idempotent: already posted
-        if (bill.status === ScheduledBillStatus.POSTED) {
-          return { data: bill, statusCode: 200, resourceId: bill.id };
-        }
+    // Status-based idempotency: already posted
+    if (bill.status === ScheduledBillStatus.POSTED) return bill;
+    if (bill.status !== ScheduledBillStatus.SCHEDULED) throw new ScheduledBillNotScheduledError('post');
 
-        if (bill.status !== ScheduledBillStatus.SCHEDULED) {
-          throw new ScheduledBillNotScheduledError('post');
-        }
+    const amount = new Decimal(bill.amount.toString());
 
-        const amount = new Decimal(bill.amount.toString());
-        const dueDate = bill.dueDate;
+    return this.prisma.$transaction(async (tx) => {
+      const [expensesLedger, incomeLedger, accountLedger] = await Promise.all([
+        this.ledgerAccountService.getExpensesLedgerAccount(),
+        this.ledgerAccountService.getIncomeLedgerAccount(),
+        this.ledgerAccountService.getAccountLedgerAccount(bill.accountId),
+      ]);
 
-        const updatedBill = await this.prisma.$transaction(async (tx) => {
-          // Resolve ledger accounts
-          const [expensesLedger, incomeLedger, accountLedger] = await Promise.all([
-            this.ledgerAccountService.getExpensesLedgerAccount(),
-            this.ledgerAccountService.getIncomeLedgerAccount(),
-            this.ledgerAccountService.getAccountLedgerAccount(bill.accountId),
-          ]);
+      let lines: Parameters<typeof this.journalEntryService.createBalanced>[0]['lines'];
+      if (bill.type === TransactionType.EXPENSE) {
+        lines = [
+          { ledgerAccountId: expensesLedger.id, debit: amount, credit: new Decimal(0), categoryId: bill.categoryId, projectId: bill.projectId ?? undefined },
+          { ledgerAccountId: accountLedger.id,  debit: new Decimal(0), credit: amount, projectId: bill.projectId ?? undefined },
+        ];
+      } else {
+        lines = [
+          { ledgerAccountId: accountLedger.id,  debit: amount, credit: new Decimal(0), projectId: bill.projectId ?? undefined },
+          { ledgerAccountId: incomeLedger.id,   debit: new Decimal(0), credit: amount, categoryId: bill.categoryId, projectId: bill.projectId ?? undefined },
+        ];
+      }
 
-          // Build journal lines
-          let lines: Parameters<typeof this.journalEntryService.createBalanced>[0]['lines'];
+      const journalEntry = await this.journalEntryService.createBalanced({
+        entryDate: bill.dueDate,
+        description: bill.description,
+        sourceType: JournalEntrySourceType.SCHEDULED_BILL,
+        sourceId: bill.id,
+        lines,
+        tx,
+      });
 
-          if (bill.type === TransactionType.EXPENSE) {
-            lines = [
-              {
-                ledgerAccountId: expensesLedger.id,
-                debit: amount,
-                credit: new Decimal(0),
-                categoryId: bill.categoryId,
-                projectId: bill.projectId ?? undefined,
-              },
-              {
-                ledgerAccountId: accountLedger.id,
-                debit: new Decimal(0),
-                credit: amount,
-                projectId: bill.projectId ?? undefined,
-              },
-            ];
-          } else {
-            lines = [
-              {
-                ledgerAccountId: accountLedger.id,
-                debit: amount,
-                credit: new Decimal(0),
-                projectId: bill.projectId ?? undefined,
-              },
-              {
-                ledgerAccountId: incomeLedger.id,
-                debit: new Decimal(0),
-                credit: amount,
-                categoryId: bill.categoryId,
-                projectId: bill.projectId ?? undefined,
-              },
-            ];
-          }
+      const transaction = await tx.transaction.create({
+        data: {
+          accountId: bill.accountId,
+          categoryId: bill.categoryId,
+          projectId: bill.projectId ?? null,
+          journalEntryId: journalEntry.id,
+          type: bill.type,
+          status: TransactionStatus.POSTED,
+          amount,
+          description: bill.description,
+          transactionDate: bill.dueDate,
+        },
+      });
 
-          const journalEntry = await this.journalEntryService.createBalanced({
-            entryDate: dueDate,
-            description: bill.description,
-            sourceType: JournalEntrySourceType.SCHEDULED_BILL,
-            sourceId: bill.id,
-            idempotencyKey,
-            lines,
-            tx,
-          });
-
-          const transaction = await tx.transaction.create({
-            data: {
-              accountId: bill.accountId,
-              categoryId: bill.categoryId,
-              projectId: bill.projectId ?? null,
-              journalEntryId: journalEntry.id,
-              type: bill.type,
-              status: TransactionStatus.POSTED,
-              amount,
-              description: bill.description,
-              transactionDate: dueDate,
-            },
-          });
-
-          return tx.scheduledBill.update({
-            where: { id },
-            data: {
-              status: ScheduledBillStatus.POSTED,
-              transactionId: transaction.id,
-            },
-            include: this.scheduledBillInclude,
-          });
-        });
-
-        return { data: updatedBill, statusCode: 200, resourceId: updatedBill.id };
-      },
-    );
-
-    return result.data;
+      return tx.scheduledBill.update({
+        where: { id },
+        data: { status: ScheduledBillStatus.POSTED, transactionId: transaction.id },
+        include: this.scheduledBillInclude,
+      });
+    });
   }
 
-  async cancel(
-    id: string,
-    idempotencyKey: string,
-    endpoint: string,
-  ): Promise<ScheduledBillWithRelations> {
-    const result = await this.idempotencyService.run<ScheduledBillWithRelations>(
-      {
-        key: idempotencyKey,
-        endpoint,
-        body: { id },
-        resourceType: 'scheduled-bill',
-      },
-      async () => {
-        const bill = await this.findOne(id);
+  async cancel(id: string): Promise<ScheduledBillWithRelations> {
+    const bill = await this.findOne(id);
 
-        // Idempotent: already cancelled
-        if (bill.status === ScheduledBillStatus.CANCELLED) {
-          return { data: bill, statusCode: 200, resourceId: bill.id };
-        }
+    // Status-based idempotency: already cancelled
+    if (bill.status === ScheduledBillStatus.CANCELLED) return bill;
+    if (bill.status === ScheduledBillStatus.POSTED) throw new ScheduledBillAlreadyPostedError();
 
-        if (bill.status === ScheduledBillStatus.POSTED) {
-          throw new ScheduledBillAlreadyPostedError();
-        }
-
-        const updated = await this.prisma.scheduledBill.update({
-          where: { id },
-          data: { status: ScheduledBillStatus.CANCELLED },
-          include: this.scheduledBillInclude,
-        });
-
-        return { data: updated, statusCode: 200, resourceId: updated.id };
-      },
-    );
-
-    return result.data;
+    return this.prisma.scheduledBill.update({
+      where: { id },
+      data: { status: ScheduledBillStatus.CANCELLED },
+      include: this.scheduledBillInclude,
+    });
   }
 }

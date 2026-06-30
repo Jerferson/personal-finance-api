@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module';
-import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { CategoriesModule } from './modules/categories/categories.module';
@@ -17,7 +16,6 @@ import { StatementModule } from './modules/statement/statement.module';
 @Module({
   imports: [
     PrismaModule,
-    IdempotencyModule,
     LedgerModule,
     AccountsModule,
     CategoriesModule,

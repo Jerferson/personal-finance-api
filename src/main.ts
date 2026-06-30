@@ -1,10 +1,9 @@
-import { NestFactory, Reflector } from '@nestjs/core';
+import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { DecimalSerializationInterceptor } from './common/interceptors/decimal-serialization.interceptor';
-import { IdempotencyGuard } from './common/idempotency/idempotency.guard';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -23,10 +22,6 @@ async function bootstrap() {
 
   // Global interceptors
   app.useGlobalInterceptors(new DecimalSerializationInterceptor());
-
-  // Global guards — needs Reflector from @nestjs/core
-  const reflector = app.get(Reflector);
-  app.useGlobalGuards(new IdempotencyGuard(reflector));
 
   // Swagger
   const config = new DocumentBuilder()
