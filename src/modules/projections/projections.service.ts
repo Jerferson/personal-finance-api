@@ -4,8 +4,22 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LedgerBalanceService } from '../ledger/ledger-balance.service';
 import { InvalidDateFormatError } from '../../common/errors/domain.errors';
-import { parseDate } from '../../common/utils/dates';
+import { parseDate, formatDateIso } from '../../common/utils/dates';
 import { BudgetProjectionQueryDto } from './dto/budget-projection-query.dto';
+import { CashflowQueryDto } from './dto/cashflow-query.dto';
+
+export interface MonthlyProjection {
+  month: string;
+  startingBalance: string;
+  scheduledIncome: string;
+  scheduledExpenses: string;
+  projectedEndBalance: string;
+}
+
+export interface CashflowProjectionResponse {
+  currentBalance: string;
+  months: MonthlyProjection[];
+}
 
 export interface AccountProjection {
   accountId: string;
@@ -130,6 +144,70 @@ export class ProjectionsService {
       scheduledExpenses: totalScheduledExpenses,
       projectedBalance: totalProjectedBalance,
       accounts: accountProjections,
+    };
+  }
+
+  async getCashflowProjection(query: CashflowQueryDto): Promise<CashflowProjectionResponse> {
+    const months = Math.min(query.months ?? 13, 24);
+
+    // Total current balance across all accounts
+    const accounts = await this.prisma.account.findMany();
+    const accountIds = accounts.map(a => a.id);
+
+    const balances = await Promise.all(
+      accounts.map(a => this.ledgerBalanceService.calculate(a.id)),
+    );
+    const currentBalance = balances.reduce((acc, b) => acc.add(b.balance), new Decimal(0));
+
+    // Fetch all SCHEDULED bills within the projection window
+    const now = new Date();
+    const windowStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const windowEnd = new Date(now.getFullYear(), now.getMonth() + months, 0);
+
+    const bills = await this.prisma.scheduledBill.findMany({
+      where: {
+        accountId: { in: accountIds },
+        status: ScheduledBillStatus.SCHEDULED,
+        dueDate: { gte: windowStart, lte: windowEnd },
+      },
+    });
+
+    // Chain projection month by month
+    let runningBalance = currentBalance;
+    const monthlyData: MonthlyProjection[] = [];
+
+    for (let i = 0; i < months; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const monthStr = formatDateIso(d).slice(0, 7); // YYYY-MM
+
+      const monthBills = bills.filter(b => b.dueDate >= monthStart && b.dueDate <= monthEnd);
+
+      const income = monthBills
+        .filter(b => b.type === TransactionType.INCOME)
+        .reduce((acc, b) => acc.add(b.amount), new Decimal(0));
+
+      const expenses = monthBills
+        .filter(b => b.type === TransactionType.EXPENSE)
+        .reduce((acc, b) => acc.add(b.amount), new Decimal(0));
+
+      const startingBalance = runningBalance;
+      const projectedEndBalance = startingBalance.add(income).sub(expenses);
+      runningBalance = projectedEndBalance;
+
+      monthlyData.push({
+        month: monthStr,
+        startingBalance: startingBalance.toFixed(2),
+        scheduledIncome: income.toFixed(2),
+        scheduledExpenses: expenses.toFixed(2),
+        projectedEndBalance: projectedEndBalance.toFixed(2),
+      });
+    }
+
+    return {
+      currentBalance: currentBalance.toFixed(2),
+      months: monthlyData,
     };
   }
 }
