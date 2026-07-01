@@ -11,13 +11,13 @@ CREATE TYPE "CategoryType" AS ENUM ('INCOME', 'EXPENSE');
 CREATE TYPE "TransactionType" AS ENUM ('INCOME', 'EXPENSE');
 
 -- CreateEnum
-CREATE TYPE "TransactionStatus" AS ENUM ('POSTED', 'VOIDED');
+CREATE TYPE "TransactionStatus" AS ENUM ('POSTED');
 
 -- CreateEnum
 CREATE TYPE "ScheduledBillStatus" AS ENUM ('SCHEDULED', 'POSTED', 'CANCELLED');
 
 -- CreateEnum
-CREATE TYPE "JournalEntryStatus" AS ENUM ('POSTED', 'VOIDED');
+CREATE TYPE "JournalEntryStatus" AS ENUM ('POSTED');
 
 -- CreateEnum
 CREATE TYPE "JournalEntrySourceType" AS ENUM ('MANUAL', 'SIMPLE_TRANSACTION', 'SCHEDULED_BILL', 'TRANSFER', 'SEED');
@@ -130,27 +130,12 @@ CREATE TABLE "scheduled_bills" (
     "amount" DECIMAL(19,4) NOT NULL,
     "description" TEXT NOT NULL,
     "due_date" DATE NOT NULL,
+    "idempotency_key" TEXT,
     "status" "ScheduledBillStatus" NOT NULL DEFAULT 'SCHEDULED',
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "scheduled_bills_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "idempotency_keys" (
-    "id" TEXT NOT NULL,
-    "key" TEXT NOT NULL,
-    "endpoint" TEXT NOT NULL,
-    "request_hash" TEXT NOT NULL,
-    "response_body" JSONB NOT NULL,
-    "status_code" INTEGER NOT NULL,
-    "resource_type" TEXT NOT NULL,
-    "resource_id" TEXT,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "expires_at" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "idempotency_keys_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -184,6 +169,12 @@ CREATE INDEX "transactions_account_id_transaction_date_idx" ON "transactions"("a
 CREATE INDEX "transactions_status_transaction_date_idx" ON "transactions"("status", "transaction_date");
 
 -- CreateIndex
+CREATE INDEX "transactions_status_type_transaction_date_idx" ON "transactions"("status", "type", "transaction_date");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "journal_entries_idempotency_key_key" ON "journal_entries"("idempotency_key");
+
+-- CreateIndex
 CREATE INDEX "journal_entries_status_idx" ON "journal_entries"("status");
 
 -- CreateIndex
@@ -208,7 +199,16 @@ CREATE INDEX "journal_lines_project_id_idx" ON "journal_lines"("project_id");
 CREATE UNIQUE INDEX "scheduled_bills_transaction_id_key" ON "scheduled_bills"("transaction_id");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "scheduled_bills_idempotency_key_key" ON "scheduled_bills"("idempotency_key");
+
+-- CreateIndex
 CREATE INDEX "scheduled_bills_account_id_idx" ON "scheduled_bills"("account_id");
+
+-- CreateIndex
+CREATE INDEX "scheduled_bills_category_id_idx" ON "scheduled_bills"("category_id");
+
+-- CreateIndex
+CREATE INDEX "scheduled_bills_project_id_idx" ON "scheduled_bills"("project_id");
 
 -- CreateIndex
 CREATE INDEX "scheduled_bills_status_idx" ON "scheduled_bills"("status");
@@ -217,7 +217,7 @@ CREATE INDEX "scheduled_bills_status_idx" ON "scheduled_bills"("status");
 CREATE INDEX "scheduled_bills_due_date_idx" ON "scheduled_bills"("due_date");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "idempotency_keys_key_endpoint_key" ON "idempotency_keys"("key", "endpoint");
+CREATE INDEX "scheduled_bills_status_due_date_idx" ON "scheduled_bills"("status", "due_date");
 
 -- AddForeignKey
 ALTER TABLE "accounts" ADD CONSTRAINT "accounts_ledger_account_id_fkey" FOREIGN KEY ("ledger_account_id") REFERENCES "ledger_accounts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
