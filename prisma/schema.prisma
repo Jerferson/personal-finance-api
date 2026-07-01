@@ -41,7 +41,6 @@ enum TransactionStatus {
 enum ScheduledBillStatus {
   SCHEDULED
   POSTED
-  CANCELLED
 }
 
 enum JournalEntryStatus {

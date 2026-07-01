@@ -59,6 +59,10 @@ const IDS = {
   // Scheduled bills
   sbSalary:               '60000000-0000-4000-8000-000000000001',
   sbRent:                 '60000000-0000-4000-8000-000000000002',
+  sbFood:                 '60000000-0000-4000-8000-000000000003',
+  sbHealth:               '60000000-0000-4000-8000-000000000004',
+  sbFreelance:            '60000000-0000-4000-8000-000000000005',
+  sbTransport:            '60000000-0000-4000-8000-000000000006',
 };
 
 async function main() {
@@ -401,6 +405,66 @@ async function main() {
     },
   });
 
+  await prisma.scheduledBill.upsert({
+    where: { id: IDS.sbFood },
+    update: {},
+    create: {
+      id: IDS.sbFood,
+      accountId: IDS.accountChecking,
+      categoryId: IDS.catFood,
+      type: TransactionType.EXPENSE,
+      amount: new Decimal('280.00'),
+      description: 'Grocery shopping - July 2026',
+      dueDate: new Date('2026-07-07T00:00:00.000Z'),
+      status: ScheduledBillStatus.SCHEDULED,
+    },
+  });
+
+  await prisma.scheduledBill.upsert({
+    where: { id: IDS.sbHealth },
+    update: {},
+    create: {
+      id: IDS.sbHealth,
+      accountId: IDS.accountChecking,
+      categoryId: IDS.catHealth,
+      type: TransactionType.EXPENSE,
+      amount: new Decimal('450.00'),
+      description: 'Health insurance - July 2026',
+      dueDate: new Date('2026-07-10T00:00:00.000Z'),
+      status: ScheduledBillStatus.SCHEDULED,
+    },
+  });
+
+  await prisma.scheduledBill.upsert({
+    where: { id: IDS.sbFreelance },
+    update: {},
+    create: {
+      id: IDS.sbFreelance,
+      accountId: IDS.accountChecking,
+      categoryId: IDS.catFreelance,
+      type: TransactionType.INCOME,
+      amount: new Decimal('2000.00'),
+      description: 'Freelance payment - July 2026',
+      dueDate: new Date('2026-07-11T00:00:00.000Z'),
+      status: ScheduledBillStatus.SCHEDULED,
+    },
+  });
+
+  await prisma.scheduledBill.upsert({
+    where: { id: IDS.sbTransport },
+    update: {},
+    create: {
+      id: IDS.sbTransport,
+      accountId: IDS.accountChecking,
+      categoryId: IDS.catTransport,
+      type: TransactionType.EXPENSE,
+      amount: new Decimal('150.00'),
+      description: 'Monthly bus pass - July 2026',
+      dueDate: new Date('2026-07-15T00:00:00.000Z'),
+      status: ScheduledBillStatus.SCHEDULED,
+    },
+  });
+
   console.log('✅ Seed completed successfully!');
   console.log(`   Ledger Accounts: Income (${ledgerIncome.id}), Expenses (${ledgerExpenses.id})`);
   console.log(`   Accounts: Checking (${IDS.accountChecking}), Savings (${IDS.accountSavings}), Cash (${IDS.accountCash})`);
@@ -408,7 +472,7 @@ async function main() {
   console.log(`   Projects: Trip to France (${IDS.projectTripFrance}), House Remodeling (${IDS.projectHouseRemodeling})`);
   console.log(`   Transactions: 6 posted`);
   console.log(`   Transfers: 1 (Checking → Savings)`);
-  console.log(`   Scheduled Bills: 2`);
+  console.log(`   Scheduled Bills: 6`);
 }
 
 main()

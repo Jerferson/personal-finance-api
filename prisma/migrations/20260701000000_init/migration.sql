@@ -14,7 +14,7 @@ CREATE TYPE "TransactionType" AS ENUM ('INCOME', 'EXPENSE');
 CREATE TYPE "TransactionStatus" AS ENUM ('POSTED');
 
 -- CreateEnum
-CREATE TYPE "ScheduledBillStatus" AS ENUM ('SCHEDULED', 'POSTED', 'CANCELLED');
+CREATE TYPE "ScheduledBillStatus" AS ENUM ('SCHEDULED', 'POSTED');
 
 -- CreateEnum
 CREATE TYPE "JournalEntryStatus" AS ENUM ('POSTED');

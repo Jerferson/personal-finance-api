@@ -1,7 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
+  Param,
   Post,
   Query,
   Req,
@@ -9,6 +13,7 @@ import {
 import {
   ApiCreatedResponse,
   ApiHeaders,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -37,5 +42,13 @@ export class TransfersController {
   create(@Body() dto: CreateTransferDto, @Req() req: Request) {
     const idempotencyKey = req.headers['idempotency-key'] as string;
     return this.transfersService.create(dto, idempotencyKey);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a transfer' })
+  @ApiNoContentResponse({ description: 'Transfer deleted successfully' })
+  remove(@Param('id') id: string) {
+    return this.transfersService.delete(id);
   }
 }

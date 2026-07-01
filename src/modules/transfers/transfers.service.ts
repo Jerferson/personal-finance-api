@@ -7,6 +7,7 @@ import { LedgerAccountService } from '../ledger/ledger-account.service';
 import {
   AccountNotFoundException,
   InvalidAmountError,
+  JournalEntryNotFoundException,
   TransferSameAccountError,
 } from '../../common/errors/domain.errors';
 import { formatDateIso, parseDate } from '../../common/utils/dates';
@@ -140,5 +141,16 @@ export class TransfersService {
       description: dto.description,
       createdAt: journalEntry.createdAt,
     };
+  }
+
+  async delete(id: string): Promise<void> {
+    const entry = await this.prisma.journalEntry.findUnique({ where: { id } });
+    if (!entry || entry.sourceType !== JournalEntrySourceType.TRANSFER) {
+      throw new JournalEntryNotFoundException(id);
+    }
+    await this.prisma.$transaction([
+      this.prisma.journalLine.deleteMany({ where: { journalEntryId: id } }),
+      this.prisma.journalEntry.delete({ where: { id } }),
+    ]);
   }
 }

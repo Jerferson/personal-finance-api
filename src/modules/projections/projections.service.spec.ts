@@ -72,7 +72,7 @@ describe('ProjectionsService', () => {
       expect(result.scheduledExpenses.toFixed(2)).toBe('2000.00');
     });
 
-    it('should ignore CANCELLED scheduled bills (excluded by query status filter)', async () => {
+    it('should return zero scheduled amounts when no bills are found', async () => {
       mockPrisma.account.findMany.mockResolvedValue([{ id: 'acc-1', name: 'Checking' }]);
       mockLedgerBalance.calculate.mockResolvedValue(makeBalance('1000.00'));
       mockPrisma.scheduledBill.findMany.mockResolvedValue([]);

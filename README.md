@@ -141,8 +141,8 @@ Account ──────────────── has one ─────
 
 ### Scheduled Bills
 - SCHEDULED → POSTED: creates a Transaction + JournalEntry atomically
-- SCHEDULED → CANCELLED: allowed at any time
-- POSTED bills cannot be cancelled; delete the linked transaction instead
+- SCHEDULED bills can be deleted at any time
+- POSTED bills cannot be deleted directly; delete the linked transaction instead
 - Only SCHEDULED bills can be edited
 
 ### Journal Entries
@@ -207,9 +207,9 @@ DELETE /transactions/:id
 POST   /scheduled-bills           (Idempotency-Key required)
 GET    /scheduled-bills?accountId=&categoryId=&projectId=&type=&status=&startDate=&endDate=&page=&limit=
 GET    /scheduled-bills/:id
-PATCH  /scheduled-bills/:id
+PATCH  /scheduled-bills/:id       (only when SCHEDULED)
 POST   /scheduled-bills/:id/post
-POST   /scheduled-bills/:id/cancel
+DELETE /scheduled-bills/:id       (only when SCHEDULED)
 ```
 
 #### Transfers
@@ -351,7 +351,7 @@ Unit tests cover the critical financial rules:
 |---|---|
 | `LedgerBalanceService` | Balance calculation from journal lines, date filtering |
 | `JournalEntryService` | Double-entry validation, unbalanced entry rejection |
-| `ProjectionsService` | Scheduled bill inclusion/exclusion, date filtering, CANCELLED ignored |
+| `ProjectionsService` | Scheduled bill inclusion/exclusion, date filtering |
 | Transaction business rules | Amount validation, category type mismatch, ledger line derivation |
 
 ---

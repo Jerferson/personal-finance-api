@@ -77,12 +77,6 @@ export class ScheduledBillNotScheduledError extends BadRequestException {
   }
 }
 
-export class ScheduledBillAlreadyPostedError extends BadRequestException {
-  constructor() {
-    super('Posted scheduled bills cannot be directly cancelled. Delete the linked transaction instead');
-  }
-}
-
 export class JournalEntryNotFoundException extends NotFoundException {
   constructor(id: string) {
     super(`Journal entry with id '${id}' not found`);

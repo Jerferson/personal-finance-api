@@ -5,7 +5,6 @@ import { JournalEntryService } from '../ledger/journal-entry.service';
 import { LedgerAccountService } from '../ledger/ledger-account.service';
 import {
   ScheduledBillNotFoundException,
-  ScheduledBillAlreadyPostedError,
   ScheduledBillNotScheduledError,
 } from '../../common/errors/domain.errors';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -104,14 +103,6 @@ describe('ScheduledBillsService', () => {
       expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('should throw ScheduledBillNotScheduledError when bill is CANCELLED', async () => {
-      mockPrisma.scheduledBill.findUnique.mockResolvedValue(
-        makeScheduledBill({ status: 'CANCELLED' }),
-      );
-
-      await expect(service.post('sb-1')).rejects.toThrow(ScheduledBillNotScheduledError);
-    });
-
     it('should post bill atomically and update status to POSTED', async () => {
       const bill = makeScheduledBill({ status: 'SCHEDULED' });
       const postedBill = makeScheduledBill({ status: 'POSTED', transaction: { id: 'tx-new' } });
@@ -131,64 +122,10 @@ describe('ScheduledBillsService', () => {
     });
   });
 
-  describe('cancel', () => {
-    it('should cancel a SCHEDULED bill and set status to CANCELLED', async () => {
-      const bill = makeScheduledBill({ status: 'SCHEDULED' });
-      const cancelled = makeScheduledBill({ status: 'CANCELLED' });
-      mockPrisma.scheduledBill.findUnique.mockResolvedValue(bill);
-      mockPrisma.scheduledBill.update.mockResolvedValue(cancelled);
-
-      const result = await service.cancel('sb-1');
-
-      expect(mockPrisma.scheduledBill.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'sb-1' },
-          data: { status: 'CANCELLED' },
-        }),
-      );
-      expect(result.status).toBe('CANCELLED');
-    });
-
-    it('should return bill unchanged when already CANCELLED (idempotency)', async () => {
-      mockPrisma.scheduledBill.findUnique.mockResolvedValue(
-        makeScheduledBill({ status: 'CANCELLED' }),
-      );
-
-      const result = await service.cancel('sb-1');
-
-      expect(result.status).toBe('CANCELLED');
-      expect(mockPrisma.scheduledBill.update).not.toHaveBeenCalled();
-    });
-
-    it('should throw ScheduledBillAlreadyPostedError when bill is POSTED', async () => {
-      mockPrisma.scheduledBill.findUnique.mockResolvedValue(
-        makeScheduledBill({ status: 'POSTED' }),
-      );
-
-      await expect(service.cancel('sb-1')).rejects.toThrow(ScheduledBillAlreadyPostedError);
-    });
-
-    it('should throw ScheduledBillNotFoundException when bill does not exist', async () => {
-      mockPrisma.scheduledBill.findUnique.mockResolvedValue(null);
-
-      await expect(service.cancel('nonexistent')).rejects.toThrow(ScheduledBillNotFoundException);
-    });
-  });
-
   describe('update', () => {
     it('should throw ScheduledBillNotScheduledError when updating a POSTED bill', async () => {
       mockPrisma.scheduledBill.findUnique.mockResolvedValue(
         makeScheduledBill({ status: 'POSTED' }),
-      );
-
-      await expect(service.update('sb-1', { description: 'Updated' })).rejects.toThrow(
-        ScheduledBillNotScheduledError,
-      );
-    });
-
-    it('should throw ScheduledBillNotScheduledError when updating a CANCELLED bill', async () => {
-      mockPrisma.scheduledBill.findUnique.mockResolvedValue(
-        makeScheduledBill({ status: 'CANCELLED' }),
       );
 
       await expect(service.update('sb-1', { description: 'Updated' })).rejects.toThrow(

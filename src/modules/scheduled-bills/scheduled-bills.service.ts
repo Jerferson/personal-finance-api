@@ -16,7 +16,6 @@ import {
   CategoryTypeMismatchError,
   InvalidAmountError,
   ProjectNotFoundException,
-  ScheduledBillAlreadyPostedError,
   ScheduledBillNotFoundException,
   ScheduledBillNotScheduledError,
 } from '../../common/errors/domain.errors';
@@ -151,6 +150,14 @@ export class ScheduledBillsService {
     });
   }
 
+  async delete(id: string): Promise<void> {
+    const bill = await this.findOne(id);
+    if (bill.status === ScheduledBillStatus.POSTED) {
+      throw new ScheduledBillNotScheduledError('delete');
+    }
+    await this.prisma.scheduledBill.delete({ where: { id } });
+  }
+
   async post(id: string): Promise<ScheduledBillWithRelations> {
     const bill = await this.findOne(id);
 
@@ -211,17 +218,4 @@ export class ScheduledBillsService {
     });
   }
 
-  async cancel(id: string): Promise<ScheduledBillWithRelations> {
-    const bill = await this.findOne(id);
-
-    // Status-based idempotency: already cancelled
-    if (bill.status === ScheduledBillStatus.CANCELLED) return bill;
-    if (bill.status === ScheduledBillStatus.POSTED) throw new ScheduledBillAlreadyPostedError();
-
-    return this.prisma.scheduledBill.update({
-      where: { id },
-      data: { status: ScheduledBillStatus.CANCELLED },
-      include: this.scheduledBillInclude,
-    });
-  }
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -13,6 +14,7 @@ import {
 import {
   ApiCreatedResponse,
   ApiHeaders,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -66,11 +68,12 @@ export class ScheduledBillsController {
     return this.scheduledBillsService.post(id);
   }
 
-  @Post(':id/cancel')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Cancel a scheduled bill' })
-  @ApiOkResponse({ description: 'Scheduled bill cancelled' })
-  cancel(@Param('id') id: string) {
-    return this.scheduledBillsService.cancel(id);
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete a scheduled bill (only when SCHEDULED)' })
+  @ApiNoContentResponse({ description: 'Scheduled bill deleted' })
+  delete(@Param('id') id: string) {
+    return this.scheduledBillsService.delete(id);
   }
+
 }
