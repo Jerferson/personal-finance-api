@@ -61,7 +61,7 @@ export class TransactionNotFoundException extends NotFoundException {
 
 export class TransactionNotEditableError extends BadRequestException {
   constructor() {
-    super('Voided transactions cannot be updated');
+    super('Only description and projectId can be updated on a posted transaction');
   }
 }
 
@@ -79,7 +79,7 @@ export class ScheduledBillNotScheduledError extends BadRequestException {
 
 export class ScheduledBillAlreadyPostedError extends BadRequestException {
   constructor() {
-    super('Posted scheduled bills cannot be directly cancelled. Void the linked transaction instead');
+    super('Posted scheduled bills cannot be directly cancelled. Delete the linked transaction instead');
   }
 }
 

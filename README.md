@@ -9,7 +9,7 @@ A production-quality REST API for managing personal finances, built with **NestJ
 Personal Finance Manager is a backend challenge that goes beyond simple CRUD operations. It demonstrates:
 
 - **Simplified ledger architecture** with internal double-entry journal entries
-- **Financial integrity** through immutable posted records (void instead of delete)
+- **Financial integrity** through validated posted records with atomic delete
 - **Budget projection** using scheduled bills separate from posted transactions
 - **Idempotent financial operations** to prevent duplicate records on retries
 - **Clean architecture** with thin controllers, rich service layer, and shared ledger module
@@ -43,11 +43,15 @@ Personal Finance Manager is a backend challenge that goes beyond simple CRUD ope
 - **Monthly reports** — Expenses by category with percentages; income/expense summary
 - **Budget projection** — Current balance + scheduled bills until a future date
 - **Idempotency** — Duplicate-safe financial commands via `Idempotency-Key` header
-- **Audit trail** — Journal entries and lines are never deleted; voiding changes status only
+- **Journal entries** — Read-only audit trail of all financial movements (transactions and transfers)
 
 ---
 
-## Architecture Overview
+## Architecture Overview V1
+
+[![Domain Model Diagram](https://drive.google.com/thumbnail?id=1Stresd7tsN9j5Wm2swfvQSWUN0naQ_Yr&sz=w1200)](https://app.diagrams.net/#G1Stresd7tsN9j5Wm2swfvQSWUN0naQ_Yr#%7B%22pageId%22%3A%22IEUq0kYoGwujQ4KiPO6B%22%7D)
+
+> Click the image to open the interactive diagram in diagrams.net.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -127,25 +131,24 @@ Account ──────────────── has one ─────
 ### Transactions
 - `amount` must be positive and never zero
 - Category type must match transaction type (INCOME category → INCOME transaction)
-- POSTED transactions: only `description` and `projectId` are editable
-- VOIDED transactions: no fields editable
-- To correct a financial record: void + create new transaction
+- Only `description` and `projectId` are editable after creation
+- Deleting a transaction removes it and its associated journal entry atomically
+- To correct a financial record: delete + create new transaction
 
 ### Accounts
 - Cannot be deleted if linked to transactions, scheduled bills, or journal lines
 - Balance is calculated from internal journal lines (includes transfers)
 
 ### Scheduled Bills
-- SCHEDULED → POSTED: creates a Transaction + JournalEntry
-- SCHEDULED → CANCELLED: allowed
-- POSTED → cannot be cancelled directly; void the linked transaction instead
+- SCHEDULED → POSTED: creates a Transaction + JournalEntry atomically
+- SCHEDULED → CANCELLED: allowed at any time
+- POSTED bills cannot be cancelled; delete the linked transaction instead
 - Only SCHEDULED bills can be edited
 
 ### Journal Entries
 - Must have at least two lines
 - Total debits must equal total credits
-- Voiding only changes status (no reversal entry in this version)
-- VOIDED entries do not affect balances or reports
+- Read-only: created internally by transactions and transfers, not editable via API
 
 ### Transfers
 - Creates a JournalEntry directly (no Transaction record)
@@ -193,32 +196,42 @@ GET    /projects/:id/summary
 #### Transactions
 ```
 POST   /transactions              (Idempotency-Key required)
-GET    /transactions?accountId=&categoryId=&type=&status=&startDate=&endDate=&page=&limit=
+GET    /transactions?accountId=&categoryId=&projectId=&type=&status=&startDate=&endDate=&page=&limit=
 GET    /transactions/:id
 PATCH  /transactions/:id
-POST   /transactions/:id/void     (Idempotency-Key required)
+DELETE /transactions/:id
 ```
 
 #### Scheduled Bills
 ```
 POST   /scheduled-bills           (Idempotency-Key required)
-GET    /scheduled-bills?accountId=&status=&type=&startDate=&endDate=&page=&limit=
+GET    /scheduled-bills?accountId=&categoryId=&projectId=&type=&status=&startDate=&endDate=&page=&limit=
 GET    /scheduled-bills/:id
 PATCH  /scheduled-bills/:id
-POST   /scheduled-bills/:id/post  (Idempotency-Key required)
-POST   /scheduled-bills/:id/cancel (Idempotency-Key required)
+POST   /scheduled-bills/:id/post
+POST   /scheduled-bills/:id/cancel
 ```
 
 #### Transfers
 ```
+GET    /transfers?page=&limit=
 POST   /transfers                 (Idempotency-Key required)
 ```
 
-#### Journal Entries (audit/read)
+#### Statement (unified view)
+```
+GET    /statement?mode=initial|past|future&skip=0&limit=20
+```
+
+Modes:
+- `initial` (default) — returns the last 20 past entries + next 3 upcoming scheduled bills in one call
+- `past` — posted transactions and transfers, ordered by date descending, paginated via `skip`/`limit`
+- `future` — upcoming scheduled bills (dueDate ≥ today, status SCHEDULED), ordered by due date ascending
+
+#### Journal Entries (read-only)
 ```
 GET    /journal-entries?status=&sourceType=&startDate=&endDate=&page=&limit=
 GET    /journal-entries/:id
-POST   /journal-entries/:id/void  (Idempotency-Key required)
 ```
 
 #### Ledger Accounts (read-only)
@@ -236,6 +249,7 @@ GET    /reports/monthly-summary?month=YYYY-MM
 #### Projections
 ```
 GET    /projections/budget?until=YYYY-MM-DD&accountId=
+GET    /projections/cashflow?months=N
 ```
 
 ### Idempotency
@@ -335,8 +349,8 @@ Unit tests cover the critical financial rules:
 
 | Test suite | What it tests |
 |---|---|
-| `LedgerBalanceService` | Balance calculation from journal lines, date filtering, VOIDED ignored |
-| `JournalEntryService` | Double-entry validation, unbalanced rejection, idempotent void |
+| `LedgerBalanceService` | Balance calculation from journal lines, date filtering |
+| `JournalEntryService` | Double-entry validation, unbalanced entry rejection |
 | `ProjectionsService` | Scheduled bill inclusion/exclusion, date filtering, CANCELLED ignored |
 | Transaction business rules | Amount validation, category type mismatch, ledger line derivation |
 
@@ -354,7 +368,7 @@ The seed creates realistic demonstration data:
 | Cash Wallet | CASH | $200.00 |
 
 ### Categories
-**Income:** Salary, Freelance, Investment Return  
+**Income:** Salary, Freelance, Investment Return
 **Expense:** Food, Rent, Transport, Health, Travel, House Remodeling
 
 ### Projects
@@ -409,9 +423,9 @@ Scheduled bills represent future *intentions*, not confirmed financial facts. Mi
 
 Financial operations must be safe to retry. Network failures, browser double-clicks, or timeout retries should not create duplicate transactions. Every financial command requires an `Idempotency-Key` header. The key + endpoint + request hash combination is stored in the same database transaction as the financial record.
 
-### Why void instead of delete?
+### Why hard delete for transactions?
 
-Deleting a transaction would break the audit trail. Voiding marks the transaction and its journal entry as VOIDED — they remain in the database for historical records and compliance, but do not affect balances or reports. This mirrors how accounting systems handle corrections.
+Deleting a transaction removes it and its associated journal entry atomically in a single database transaction. This keeps the model simple for the challenge scope: if a transaction was created by mistake, the user deletes it and creates a new one with the correct data. Journal entries created by transfers remain in the database and are auditable via `GET /journal-entries`. In a production system, a soft-delete or void approach (marking as VOIDED without removing records) would be preferable to preserve a complete audit trail and support compliance requirements.
 
 ---
 
@@ -420,7 +434,7 @@ Deleting a transaction would break the audit trail. Voiding marks the transactio
 | Decision | Consequence | Production alternative |
 |---|---|---|
 | No authentication | Simpler focus on financial domain | JWT + guards + userId on all entities |
-| Void changes status only (no reversal entry) | Simpler implementation | Create a reversal journal entry (standard accounting) |
+| Hard delete for transactions | Simple correction flow (delete + recreate) | Soft-delete/void to preserve full audit trail |
 | Generic Income/Expenses ledger accounts | Simpler chart of accounts | Per-category ledger accounts for detailed reporting |
 | Balance calculated on request | Simple, always accurate | Balance snapshots for high-volume accounts |
 | No rate limiting | Fine for challenge scope | Redis + throttler guard |

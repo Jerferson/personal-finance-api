@@ -119,7 +119,7 @@ describe('LedgerBalanceService', () => {
       );
     });
 
-    it('should ignore VOIDED journal entries (filter by POSTED status)', async () => {
+    it('should only aggregate journal lines from POSTED journal entries', async () => {
       mockPrisma.account.findUnique.mockResolvedValue(makeAccount());
       mockPrisma.journalLine.aggregate.mockResolvedValue(makeAggregate('0', '0'));
 
